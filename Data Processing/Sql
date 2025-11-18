@@ -1,0 +1,130 @@
+SELECT 
+    vin AS unique_vin,
+    AVG(CAST(mmr AS INT)) AS avg_mmr,
+    AVG(CAST(sellingprice AS INT)) AS avg_selling_price,
+    COUNT(vin) AS number_of_cars,
+    COALESCE(make, 'Not given') AS make,
+    COALESCE(model, 'Not given') AS model,
+    COALESCE(color, 'Not given') AS color,
+    COALESCE(trim, 'Not given') AS trim,
+    COALESCE(body, 'Not given') AS body,
+    COALESCE(interior, 'Not given') AS interior,
+    COALESCE(saledate, 'Not given') AS saledate,
+    MAX(COALESCE(CAST(sellingprice AS INT), 0)) AS sellingprice,
+    MAX(COALESCE(CAST(mmr AS INT), 0)) AS mmr,
+    MAX(COALESCE(odometer, 0)) AS odometer,
+    MAX(COALESCE(condition, 0)) AS condition,
+    MAX(CAST(sellingprice AS INT)) * COUNT(DISTINCT vin) AS revenue,
+    MAX(CAST(sellingprice AS INT) - CAST(mmr AS INT)) AS profit,
+    MAX(((CAST(sellingprice AS INT) - CAST(mmr AS INT)) / CAST(mmr AS INT)) * 100) AS profit_percentage,
+    CASE
+        WHEN MAX(((CAST(sellingprice AS INT) - CAST(mmr AS INT)) / CAST(mmr AS INT)) * 100) < 50 THEN 'LOW'
+        WHEN MAX(((CAST(sellingprice AS INT) - CAST(mmr AS INT)) / CAST(mmr AS INT)) * 100) > 90 THEN 'HIGH'
+        ELSE 'MEDIUM'
+    END AS profit_category,
+    TO_VARCHAR(
+        TRY_TO_TIMESTAMP(saledate, 'Dy Mon DD YYYY HH24:MI:SS'),
+        'MMMM'
+    ) AS sale_month,
+    CASE
+        WHEN TRANSMISSION ='Automatic'THEN 'Automatic'
+        WHEN TRANSMISSION ='Manual' THEN 'Manuel'
+        else 'Not Given'
+        END AS TRANSMISSION,
+FROM bright.car_sales.data
+GROUP BY 
+    TRANSMISSION,
+    COALESCE(make, 'Not given'),
+    COALESCE(model, 'Not given'),
+    COALESCE(color, 'Not given'),
+    COALESCE(trim, 'Not given'),
+    COALESCE(body, 'Not given'),
+    COALESCE(interior, 'Not given'),
+    COALESCE(saledate, 'Not given'),
+    TO_VARCHAR(
+        TRY_TO_TIMESTAMP(saledate, 'Dy Mon DD YYYY HH24:MI:SS'),
+        'MMMM'
+    );
+    ------------------------------------------------------------------------------------
+SELECT
+    ROW_NUMBER() OVER (ORDER BY saledate) AS entry_id,
+    COALESCE(year, 'Not given') AS year,
+    COALESCE(state, 'Not given') AS state,
+    COALESCE(vin, 'Not given') AS vin,
+    COALESCE(make, 'Not given') AS make,
+    
+    --  Clean model (replace dates)
+    CASE
+        WHEN model RLIKE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+             OR model RLIKE '^[A-Za-z]{3} [0-9]{1,2}, [0-9]{4}$'
+             OR model RLIKE '^[0-9]{2}/[0-9]{2}/[0-9]{4}$'
+        THEN 'Not given'
+        ELSE COALESCE(model, 'Not given')
+    END AS model,
+    
+    COALESCE(trim, 'Not given') AS trim,
+    COALESCE(body, 'Not given') AS body,
+    COALESCE(interior, 'Not given') AS interior,
+    COALESCE(saledate, 'Not given') AS saledate,
+    COALESCE(TRANSMISSION, 'Not given') AS transmission,
+    CAST(mmr AS INT) AS mmr,
+    CAST(sellingprice AS INT) AS revenue,
+    COALESCE(odometer, 0) AS odometer,
+    COALESCE(condition, 0) AS condition,
+    
+    --  Profit calculations
+    (CAST(sellingprice AS INT) - CAST(mmr AS INT)) AS profit,
+    ((CAST(sellingprice AS INT) - CAST(mmr AS INT)) / NULLIF(CAST(mmr AS INT), 0)) * 100 AS profit_percentage,
+    
+    CASE
+        WHEN ((CAST(sellingprice AS INT) - CAST(mmr AS INT)) / NULLIF(CAST(mmr AS INT), 0)) * 100 < 50 THEN 'LOW'
+        WHEN ((CAST(sellingprice AS INT) - CAST(mmr AS INT)) / NULLIF(CAST(mmr AS INT), 0)) * 100 > 90 THEN 'HIGH'
+        ELSE 'MEDIUM'
+    END AS profit_category,
+
+    --  Clean color field
+    CASE
+        WHEN color IS NULL THEN 'Not given'
+        WHEN TRIM(color) = '' THEN 'Not given'
+        WHEN TRIM(color) = '-' THEN 'Not given'
+        WHEN TRIM(color) RLIKE '^[\\-–—]+$' THEN 'Not given'
+        ELSE color
+    END AS color,
+
+    --  Extract sale month
+    TO_VARCHAR(
+        TRY_TO_TIMESTAMP(saledate, 'Dy Mon DD YYYY HH24:MI:SS'),
+        'MMMM'
+          ) AS sale_month,
+    TO_VARCHAR(
+        TRY_TO_TIMESTAMP(saledate, 'Dy Mon DD YYYY HH24:MI:SS'),
+        'MMMM YYYY') AS sale_month_year,
+        
+
+    --  Year classification
+    CASE
+        WHEN CAST(year AS INT) BETWEEN 1980 AND 1989 THEN '1980s'
+        WHEN CAST(year AS INT) BETWEEN 1990 AND 1999 THEN '1990s'
+        WHEN CAST(year AS INT) BETWEEN 2000 AND 2009 THEN '2000s'
+        WHEN CAST(year AS INT) BETWEEN 2010 AND 2019 THEN '2010s'
+        WHEN CAST(year AS INT) >= 2020 THEN '2020s'
+        ELSE 'Unknown'
+    END AS year_classification,
+
+    --  Region classification (use IN, not =)
+    CASE
+        WHEN state IN ('ca', 'or', 'wa', 'nv', 'az', 'ak', 'hi') THEN 'West'
+        WHEN state IN ('mt', 'id', 'wy', 'ut', 'co', 'nm') THEN 'Mountain'
+        WHEN state IN ('nd', 'sd', 'ne', 'ks', 'mn', 'ia', 'mo') THEN 'Midwest'
+        WHEN state IN ('tx', 'ok', 'ar', 'la') THEN 'South Central'
+        WHEN state IN ('fl', 'ga', 'sc', 'nc', 'al', 'ms', 'tn', 'ky') THEN 'Southeast'
+        WHEN state IN ('ny', 'nj', 'pa', 'ct', 'ma', 'ri', 'nh', 'vt', 'me') THEN 'Northeast'
+        ELSE 'Not given'
+    END AS region
+
+FROM bright.car_sales.data;
+
+---------------------------------------------------------------------------------
+SELECT
+      Max(YEAR)
+FROM bright.car_sales.data;
